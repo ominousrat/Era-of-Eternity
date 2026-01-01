@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://cqjomwe2qnqas"]
+
+[ext_resource type="Script" uid="uid://cpsqnhwkifi4p" path="res://src/world/Region.cs" id="1_6hh2v"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_6hh2v"]
+vertex_color_use_as_albedo = true
+
+[sub_resource type="ArrayMesh" id="ArrayMesh_6hh2v"]
+
+[node name="Region" type="StaticBody3D" unique_id=1110451491 node_paths=PackedStringArray("MeshInstance", "CollisionShape")]
+script = ExtResource("1_6hh2v")
+Material = SubResource("StandardMaterial3D_6hh2v")
+MeshInstance = NodePath("MeshInstance3D")
+CollisionShape = NodePath("CollisionShape3D")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=574995178]
+mesh = SubResource("ArrayMesh_6hh2v")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1080507551]

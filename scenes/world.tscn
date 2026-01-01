@@ -1,0 +1,22 @@
+[gd_scene format=3 uid="uid://b6yp8mmrg1h0j"]
+
+[ext_resource type="Script" uid="uid://b7itbpmfqrv1u" path="res://src/world/world.gd" id="1_4wyf3"]
+[ext_resource type="PackedScene" uid="uid://b6rn8vqdw1eg" path="res://scenes/chunk_manager.tscn" id="2_4wyf3"]
+[ext_resource type="Script" uid="uid://bllv7142d6g0e" path="res://src/player.gd" id="2_rwgxs"]
+
+[node name="World" type="Node3D" unique_id=1694312229]
+script = ExtResource("1_4wyf3")
+
+[node name="ChunkManager" parent="." unique_id=1988030804 instance=ExtResource("2_4wyf3")]
+Colors = Array[Color]([Color(0, 0, 0, 1), Color(0.49077058, 0.01563903, 0.27625114, 1), Color(0.5529556, 0.55295557, 0.55295557, 1), Color(1, 1, 1, 1)])
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=357901126]
+transform = Transform3D(1, 0, 0, 0, 1.1924881e-08, 1, 0, -1, 1.1924881e-08, 0, 500, 0)
+
+[node name="Player" type="CharacterBody3D" parent="." unique_id=1850602438 node_paths=PackedStringArray("camera_3d")]
+script = ExtResource("2_rwgxs")
+camera_3d = NodePath("Camera3D")
+
+[node name="Camera3D" type="Camera3D" parent="Player" unique_id=1122615845]
+transform = Transform3D(1, 0, 0, 0, -0.72537434, 0.6883546, 0, -0.6883546, -0.72537434, -3, 3, -3)
+fov = 90.0

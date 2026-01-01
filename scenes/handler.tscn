@@ -1,0 +1,17 @@
+[gd_scene format=3 uid="uid://dabmxapfarfh1"]
+
+[ext_resource type="Script" uid="uid://dn101t5bfrcl3" path="res://src/handler/fps_handler.gd" id="1_8a2i7"]
+[ext_resource type="Script" uid="uid://dneoxtht8d27i" path="res://src/handler/thread_handler.gd" id="2_jov4n"]
+
+[node name="Handler" type="Node" unique_id=1349143413]
+
+[node name="FPSHandler" type="Node" parent="." unique_id=327716490 node_paths=PackedStringArray("fps_counter")]
+script = ExtResource("1_8a2i7")
+fps_counter = NodePath("FPSCounter")
+
+[node name="FPSCounter" type="Label" parent="FPSHandler" unique_id=793604252]
+offset_right = 325.0
+offset_bottom = 121.0
+
+[node name="ThreadHandler" type="Node" parent="." unique_id=834585751]
+script = ExtResource("2_jov4n")

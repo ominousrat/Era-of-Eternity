@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://cwkbcs8txcq5h"]
+
+[ext_resource type="Script" uid="uid://q1o357l5u3c4" path="res://src/world/Chunk.cs" id="1_jas4a"]
+
+[sub_resource type="PhysicsMaterial" id="PhysicsMaterial_jas4a"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_jas4a"]
+vertex_color_use_as_albedo = true
+
+[node name="Chunk" type="StaticBody3D" unique_id=2080973322 node_paths=PackedStringArray("CollisionShape", "MeshInstance")]
+physics_material_override = SubResource("PhysicsMaterial_jas4a")
+script = ExtResource("1_jas4a")
+Material = SubResource("StandardMaterial3D_jas4a")
+CollisionShape = NodePath("CollisionShape3D")
+MeshInstance = NodePath("MeshInstance3D")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1340907701]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=2104683717]

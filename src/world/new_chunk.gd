@@ -1,0 +1,1 @@
+class_name NewChunk extends StaticBody3D
