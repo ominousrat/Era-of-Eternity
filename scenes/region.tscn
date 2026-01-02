@@ -2,12 +2,15 @@
 
 [ext_resource type="Script" uid="uid://cpsqnhwkifi4p" path="res://src/world/Region.cs" id="1_6hh2v"]
 
+[sub_resource type="PhysicsMaterial" id="PhysicsMaterial_6hh2v"]
+
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_6hh2v"]
 vertex_color_use_as_albedo = true
 
 [sub_resource type="ArrayMesh" id="ArrayMesh_6hh2v"]
 
 [node name="Region" type="StaticBody3D" unique_id=1110451491 node_paths=PackedStringArray("MeshInstance", "CollisionShape")]
+physics_material_override = SubResource("PhysicsMaterial_6hh2v")
 script = ExtResource("1_6hh2v")
 Material = SubResource("StandardMaterial3D_6hh2v")
 MeshInstance = NodePath("MeshInstance3D")

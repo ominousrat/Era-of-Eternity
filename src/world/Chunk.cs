@@ -30,9 +30,9 @@ public partial class Chunk : StaticBody3D
 		new Vector3( 0.5f,  0.5f, -0.5f), // 6
 		new Vector3( 0.5f, -0.5f, -0.5f), // 7
 	};
-
+	
 	private enum Face { Right, Left, Top, Bottom, Front, Back }
-
+	
 	private static readonly Dictionary<Face, int[][]> FaceIndices = new()
 	{
 		{ Face.Right,  new[] { new[] {3,6,7}, new[] {3,2,6} } },
@@ -44,7 +44,7 @@ public partial class Chunk : StaticBody3D
 		{ Face.Front,  new[] { new[] {0,2,3}, new[] {0,1,2} } },
 		{ Face.Back,   new[] { new[] {7,5,4}, new[] {7,6,5} } },
 	};
-
+	
 	private static readonly Dictionary<Face, Vector3> FaceNormals = new()
 	{
 		{ Face.Right,  new Vector3( 1,  0,  0) },
@@ -56,16 +56,23 @@ public partial class Chunk : StaticBody3D
 		{ Face.Front,  new Vector3( 0,  0,  1) },
 		{ Face.Back,   new Vector3( 0,  0, -1) },
 	};
-
+	
+	
+	
 	public override void _Ready()
 	{
 		_surfaceArray = new Godot.Collections.Array();
 		_surfaceArray.Resize((int)Mesh.ArrayType.Max);
-		MeshInstance.Mesh = new ArrayMesh();
+		
+		// Only set mesh if MeshInstance exists (e.g., when instantiated from scene)
+		// When created programmatically, MeshInstance may be null
+		if (MeshInstance != null)
+		{
+			MeshInstance.Mesh = new ArrayMesh();
+		}
 	}
-
-	// ----- Packing helpers -----
-
+	
+	
 	private static uint PackBlock(int x, int y, int z, Color color)
 	{
 		x = Mathf.Clamp(x, 0, 15);
@@ -87,8 +94,9 @@ public partial class Chunk : StaticBody3D
 		p |= (uint)((a & 0x7) << 21);
 		return p;
 	}
-
-	private static void UnpackBlock(uint packed, out int x, out int y, out int z, out Color color)
+	
+	
+	internal static void UnpackBlock(uint packed, out int x, out int y, out int z, out Color color)
 	{
 		x = (int)(packed & 0xF);
 		y = (int)((packed >> 4) & 0xF);
@@ -101,15 +109,41 @@ public partial class Chunk : StaticBody3D
 
 		color = new Color(r / 7.0f, g / 7.0f, b / 7.0f, a / 7.0f);
 	}
+	
+	
+	private static void AddFace(Face face, Vector3 pos, Color color, List<Vector3> vertices, List<Vector3> normals, List<Color> colors)
+	{
+		int[][] indices = FaceIndices[face];
+		Vector3 normal = FaceNormals[face];
 
-	// ----- Data generation -----
+		foreach (int[] tri in indices)
+		{
+			foreach (int idx in tri)
+			{
+				vertices.Add(BlockVertices[idx] + pos);
+				normals.Add(normal);
+				colors.Add(color);
+			}
+		}
+	}
+	
+	
+	public void GenerateMeshData()
+	{
+		// Convert HashSet to array for the static method
+		uint[] blocksArray = new uint[_blocks.Count];
+		int index = 0;
+		foreach (uint block in _blocks)
+		{
+			blocksArray[index++] = block;
+		}
 
-	public int GenerateData(
-		int chunkSize,
-		int maxHeight,
-		FastNoiseLite noise,
-		Godot.Collections.Array<Color> colorArray,
-		Vector3 chunkOrigin)
+		// Use the static method which includes culling
+		(_verticesArray, _normalsArray, _colorsArray) = GenerateMeshDataFromBlocks(blocksArray);
+	}
+	
+	
+	public int GenerateData(int chunkSize, int maxHeight, FastNoiseLite noise, Godot.Collections.Array<Color> colorArray, Vector3 chunkOrigin)
 	{
 		_minHeight = maxHeight + 1;
 		_blocks.Clear();
@@ -149,73 +183,121 @@ public partial class Chunk : StaticBody3D
 
 		return _minHeight;
 	}
-
-	// ----- Mesh generation (CPU only, no neighbours) -----
-
-	public void GenerateMeshData()
-	{
-		var vertices = new List<Vector3>();
-		var normals  = new List<Vector3>();
-		var colors   = new List<Color>();
-
-		foreach (uint packed in _blocks)
-		{
-			UnpackBlock(packed, out int x, out int y, out int z, out Color color);
-
-			// Local block position inside chunk (0..chunkSize-1)
-			Vector3 pos = new Vector3(x, y, z);
-
-			// Add all 6 faces, no culling (fixes cross‑chunk artefacts)
-			AddFace(Face.Right,  pos, color, vertices, normals, colors);
-			AddFace(Face.Left,   pos, color, vertices, normals, colors);
-			AddFace(Face.Top,    pos, color, vertices, normals, colors);
-			AddFace(Face.Bottom, pos, color, vertices, normals, colors);
-			AddFace(Face.Front,  pos, color, vertices, normals, colors);
-			AddFace(Face.Back,   pos, color, vertices, normals, colors);
-		}
-
-		_verticesArray = vertices.ToArray();
-		_normalsArray  = normals.ToArray();
-		_colorsArray   = colors.ToArray();
-	}
-
-	private void AddFace(
-		Face face,
-		Vector3 pos,
-		Color color,
-		List<Vector3> vertices,
-		List<Vector3> normals,
-		List<Color> colors)
-	{
-		int[][] indices = FaceIndices[face];
-		Vector3 normal = FaceNormals[face];
-
-		foreach (int[] tri in indices)
-		{
-			foreach (int idx in tri)
-			{
-				vertices.Add(BlockVertices[idx] + pos);
-				normals.Add(normal);
-				colors.Add(color);
-			}
-		}
-	}
-
-	// ----- Region integration -----
-
+	
+	
 	public (Vector3[] vertices, Vector3[] normals, Color[] colors) GetMeshData()
 	{
 		return (_verticesArray, _normalsArray, _colorsArray);
 	}
 	
+	/// <summary>
+	/// Static method to generate mesh data from block array without creating a Node.
+	/// This prevents memory leaks when we only need the mesh data.
+	/// Includes face culling to only render exposed faces.
+	/// </summary>
+	public static (Vector3[] vertices, Vector3[] normals, Color[] colors) GenerateMeshDataFromBlocks(uint[] blocks)
+	{
+		if (blocks == null || blocks.Length == 0)
+			return (Array.Empty<Vector3>(), Array.Empty<Vector3>(), Array.Empty<Color>());
+
+		// Build a HashSet of block positions for O(1) neighbor lookups (local chunk coordinates)
+		var blockPositions = new HashSet<Vector3I>();
+		
+		foreach (uint packed in blocks)
+		{
+			UnpackBlock(packed, out int x, out int y, out int z, out Color _);
+			var pos = new Vector3I(x, y, z);
+			blockPositions.Add(pos);
+		}
+
+		return GenerateMeshDataWithCulling(blocks, blockPositions, null, Vector3.Zero);
+	}
+
+	/// <summary>
+	/// Generate mesh data with cross-chunk culling support.
+	/// </summary>
+	/// <param name="blocks">Blocks in local chunk coordinates (0-15)</param>
+	/// <param name="localBlockPositions">Block positions in local chunk coordinates</param>
+	/// <param name="worldBlockPositions">All block positions in world coordinates (for cross-chunk culling), or null for chunk-only culling</param>
+	/// <param name="chunkOrigin">World-space origin of this chunk</param>
+	public static (Vector3[] vertices, Vector3[] normals, Color[] colors) GenerateMeshDataWithCulling(
+		uint[] blocks, 
+		HashSet<Vector3I> localBlockPositions,
+		HashSet<Vector3I>? worldBlockPositions,
+		Vector3 chunkOrigin)
+	{
+		if (blocks == null || blocks.Length == 0)
+			return (Array.Empty<Vector3>(), Array.Empty<Vector3>(), Array.Empty<Color>());
+
+		var vertices = new List<Vector3>();
+		var normals  = new List<Vector3>();
+		var colors   = new List<Color>();
+
+		// Neighbor offsets for each face direction
+		var neighborOffsets = new Dictionary<Face, Vector3I>
+		{
+			{ Face.Right,  new Vector3I( 1,  0,  0) },
+			{ Face.Left,   new Vector3I(-1,  0,  0) },
+			{ Face.Top,    new Vector3I( 0,  1,  0) },
+			{ Face.Bottom, new Vector3I( 0, -1,  0) },
+			{ Face.Front,  new Vector3I( 0,  0,  1) },
+			{ Face.Back,   new Vector3I( 0,  0, -1) }
+		};
+
+		foreach (uint packed in blocks)
+		{
+			UnpackBlock(packed, out int x, out int y, out int z, out Color color);
+			var blockPosLocal = new Vector3I(x, y, z);
+			Vector3 pos = new Vector3(x, y, z);
+
+			// Check each face and only add it if the neighbor doesn't exist
+			foreach (var face in Enum.GetValues<Face>())
+			{
+				Vector3I neighborOffset = neighborOffsets[face];
+				Vector3I neighborPosLocal = blockPosLocal + neighborOffset;
+
+				bool isNeighborBlocked = false;
+
+				// Check if neighbor is within chunk bounds (0-15, assuming 16x16x16 chunks)
+				const int ChunkSize = 16;
+				if (neighborPosLocal.X >= 0 && neighborPosLocal.X < ChunkSize &&
+					neighborPosLocal.Y >= 0 && neighborPosLocal.Y < ChunkSize &&
+					neighborPosLocal.Z >= 0 && neighborPosLocal.Z < ChunkSize)
+				{
+					// Neighbor is within this chunk, check local positions
+					isNeighborBlocked = localBlockPositions.Contains(neighborPosLocal);
+				}
+				else if (worldBlockPositions != null)
+				{
+					// Neighbor is outside chunk bounds, check world positions
+					Vector3 blockWorldPos = chunkOrigin + new Vector3(x, y, z);
+					Vector3 neighborWorldPos = blockWorldPos + new Vector3(neighborOffset.X, neighborOffset.Y, neighborOffset.Z);
+					Vector3I neighborWorldPosInt = new Vector3I(
+						(int)Mathf.Floor(neighborWorldPos.X),
+						(int)Mathf.Floor(neighborWorldPos.Y),
+						(int)Mathf.Floor(neighborWorldPos.Z)
+					);
+					isNeighborBlocked = worldBlockPositions.Contains(neighborWorldPosInt);
+				}
+
+				// Only add face if neighbor is empty (face is exposed)
+				if (!isNeighborBlocked)
+				{
+					AddFace(face, pos, color, vertices, normals, colors);
+				}
+			}
+		}
+
+		return (vertices.ToArray(), normals.ToArray(), colors.ToArray());
+	}
+	
 	public void SetBlocks(uint[] blocks)
-{
-	_blocks.Clear();
-	if (blocks == null)
-		return;
+	{
+		_blocks.Clear();
+		if (blocks == null || blocks.Length == 0)
+			return;
 
-	foreach (var b in blocks)
-		_blocks.Add(b);
-}
-
+		foreach (var b in blocks)
+			_blocks.Add(b);
+	}
 }
