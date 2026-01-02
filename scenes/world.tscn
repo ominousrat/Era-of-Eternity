@@ -8,9 +8,7 @@
 script = ExtResource("1_4wyf3")
 
 [node name="ChunkManager" parent="." unique_id=1988030804 instance=ExtResource("2_4wyf3")]
-WorldDimensions = Vector3(128, 64, 128)
-LayerColors = Array[Color]([Color(0, 0, 0, 1), Color(0, 0, 0, 1), Color(0, 0, 0, 1), Color(0, 0, 0, 1)])
-ThreadCount = 2
+LayerColors = Array[Color]([Color(0, 0, 0, 1), Color(0.2509804, 0.2509804, 0.2509804, 1), Color(0.7529412, 0.7529412, 0.7529412, 1), Color(1, 1, 1, 1)])
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=357901126]
 transform = Transform3D(1, 0, 0, 0, 1.1924881e-08, 1, 0, -1, 1.1924881e-08, 0, 500, 0)

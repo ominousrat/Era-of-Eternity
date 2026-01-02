@@ -11,9 +11,9 @@ using System.Threading;
 public partial class ChunkManager : Node
 {
 	[ExportCategory("Voxel Configuration")]
-	[Export] public Vector3 WorldDimensions = new Vector3(128, 64, 128); // Reduced from 512x256x512 to prevent OOM
+	[Export] public Vector3 WorldDimensions = new Vector3(1024, 256, 1024); // Reduced from 512x256x512 to prevent OOM
 	[Export] public int ChunkSize = 16;
-	[Export] public int RegionSizeXZ = 4;
+	[Export] public int RegionSizeXZ = 16;
 	[Export] public Godot.Collections.Array<Color> LayerColors = new();
 
 	[ExportCategory("Generation Settings")]
@@ -33,6 +33,10 @@ public partial class ChunkManager : Node
 	private bool _isGenerating = false;
 	private bool _hasFinishedGeneration = false;
 	private double _startTimeUsec = 0;
+	
+	// Memory management for large worlds
+	private int _chunksProcessed = 0;
+	private const int MAX_CHUNKS_PER_BATCH = 256; // Limit chunks per batch to prevent memory issues
 
 	public override void _Ready()
 	{
@@ -65,6 +69,12 @@ public partial class ChunkManager : Node
 		foreach (var thread in _activeThreads)
 		{
 			if (thread.IsAlive) thread.Join();
+		}
+		
+		// Clear any remaining data to prevent memory leaks
+		lock (_bufferLock)
+		{
+			_threadSafeChunkBuffer.Clear();
 		}
 	}
 
@@ -106,8 +116,31 @@ public partial class ChunkManager : Node
 		if (_isGenerating) return;
 		_isGenerating = true;
 
-		// 1. Generate a flat list of all coordinates that need processing
-		List<Vector3I> allCoordinates = new List<Vector3I>();
+		// New approach: Process world in batches to prevent memory overflow with large worlds
+		var chunkBatches = GenerateChunkBatches();
+		
+		// Create a single thread pool for processing chunks in batches
+		int logicalCores = Math.Max(1, System.Environment.ProcessorCount - 1);
+		int maxWorkers = Math.Min(ThreadCount, logicalCores);
+		
+		_activeThreads.Clear();
+
+		for (int i = 0; i < maxWorkers; i++)
+		{
+			Thread thread = new Thread(Worker_GenerateBatches);
+			thread.IsBackground = true;
+			thread.Start(i); // Pass thread index for identification
+			_activeThreads.Add(thread);
+		}
+
+		GD.Print($"[ChunkManager] Started {_activeThreads.Count} threads for generation.");
+	}
+	
+	private List<List<Vector3I>> GenerateChunkBatches()
+	{
+		var allCoordinates = new List<Vector3I>();
+		
+		// Create list of coordinates in chunks
 		for (int x = 0; x < _totalChunksGrid.X; x++)
 		{
 			for (int y = 0; y < _totalChunksGrid.Y; y++)
@@ -119,30 +152,24 @@ public partial class ChunkManager : Node
 			}
 		}
 
-		// 2. Distribute work among threads
-		int logicalCores = Math.Max(1, System.Environment.ProcessorCount - 1);
-		int maxWorkers = Math.Min(ThreadCount, logicalCores);
-		int chunksPerThread = Mathf.CeilToInt((float)allCoordinates.Count / maxWorkers);
-
-		_activeThreads.Clear();
-
-		for (int i = 0; i < maxWorkers; i++)
+		var batches = new List<List<Vector3I>>();
+		
+		// Process in smaller batches to prevent memory issues
+		for (int i = 0; i < allCoordinates.Count; i += MAX_CHUNKS_PER_BATCH)
 		{
-			// Calculate slice for this thread
-			int start = i * chunksPerThread;
-			int count = Math.Min(chunksPerThread, allCoordinates.Count - start);
-
-			if (count <= 0) break;
-
-			List<Vector3I> threadWorkload = allCoordinates.GetRange(start, count);
-
-			Thread thread = new Thread(Worker_GenerateChunks);
-			thread.IsBackground = true;
-			thread.Start(threadWorkload);
-			_activeThreads.Add(thread);
+			int count = Math.Min(MAX_CHUNKS_PER_BATCH, allCoordinates.Count - i);
+			var batch = new List<Vector3I>();
+			
+			for (int j = 0; j < count; j++)
+			{
+				batch.Add(allCoordinates[i + j]);
+			}
+			
+			batches.Add(batch);
 		}
-
-		GD.Print($"[ChunkManager] Started {_activeThreads.Count} threads for generation.");
+		
+		GD.Print($"[ChunkManager] Generated {batches.Count} batches for processing");
+		return batches;
 	}
 
 	private void CheckThreadStatus()
@@ -173,9 +200,24 @@ public partial class ChunkManager : Node
 	// Worker Logic (Runs on Background Threads)
 	// --------------------------------------------------------------------------
 
-	private void Worker_GenerateChunks(object? state)
+	private void Worker_GenerateBatches(object? state)
 	{
-		var coordinates = (List<Vector3I>)state!;
+		int threadIndex = (int)state!;
+		
+		// Process chunks in batches to avoid memory issues
+		var allCoordinates = new List<Vector3I>();
+		
+		for (int x = 0; x < _totalChunksGrid.X; x++)
+		{
+			for (int y = 0; y < _totalChunksGrid.Y; y++)
+			{
+				for (int z = 0; z < _totalChunksGrid.Z; z++)
+				{
+					allCoordinates.Add(new Vector3I(x, y, z));
+				}
+			}
+		}
+
 		int worldHeightLimit = (int)WorldDimensions.Y;
 
 		// Create thread-local FastNoiseLite instance (not thread-safe to share)
@@ -184,8 +226,12 @@ public partial class ChunkManager : Node
 		threadNoise.Frequency = _noise.Frequency;
 		threadNoise.Seed = _noise.Seed;
 
-		foreach (var coord in coordinates)
+		int processedCount = 0;
+		
+		for (int i = 0; i < allCoordinates.Count; i++)
 		{
+			var coord = allCoordinates[i];
+			
 			Vector3 origin = new Vector3(coord.X * ChunkSize, coord.Y * ChunkSize, coord.Z * ChunkSize);
 			
 			// Expensive math here
@@ -204,8 +250,19 @@ public partial class ChunkManager : Node
 			lock (_bufferLock)
 			{
 				_threadSafeChunkBuffer.Add(dataPacket);
+				_chunksProcessed++;
+				
+				// Periodic logging for large worlds
+				if (_chunksProcessed % 100 == 0)
+				{
+					GD.Print($"[ChunkManager] Thread {threadIndex}: Processed {_chunksProcessed} chunks");
+				}
 			}
+			
+			processedCount++;
 		}
+		
+		GD.Print($"[ChunkManager] Thread {threadIndex}: Finished processing {processedCount} chunks");
 	}
 
 	private uint[] CalculateBlockData(Vector3 origin, int maxHeight, FastNoiseLite noise)
